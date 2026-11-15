@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>对象采集 · 本地模拟对象存储</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header class="shell-header">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">◈</span>
+    <div>
+      <h1>对象采集台</h1>
+      <p>按前缀浏览 · 选定版本 · 可续传 · 不拼接</p>
+    </div>
+  </div>
+  <div class="header-stats">
+    <span class="pill" id="store-pill">存储连接中…</span>
+    <span class="pill muted" id="ingest-pill">采集服务连接中…</span>
+  </div>
+  <button class="btn subtle" id="btn-reset" title="清空采集记录并重建演示存储">重置演示</button>
+</header>
+
+<main class="layout">
+  <div class="column left">
+
+    <section class="panel" id="browse-panel">
+      <div class="panel-head">
+        <div>
+          <h2><span class="step">1</span> 浏览对象存储</h2>
+          <p class="hint">按前缀扫描，服务端分页游标；每行都带版本号与内容指纹。</p>
+        </div>
+        <span class="badge" id="browse-count">—</span>
+      </div>
+
+      <div class="browse-controls">
+        <label class="field grow">
+          <span>前缀</span>
+          <input id="prefix" type="text" placeholder="如 datasets/ 、incoming/ 、留空浏览全部" autocomplete="off">
+        </label>
+        <label class="field narrow">
+          <span>每页</span>
+          <select id="page-size">
+            <option>5</option>
+            <option selected>10</option>
+            <option>20</option>
+            <option>50</option>
+          </select>
+        </label>
+        <button class="btn primary" id="btn-browse">浏览</button>
+      </div>
+
+      <div class="chips" id="prefix-chips"></div>
+
+      <div class="browse-meta">
+        <div class="pager">
+          <button class="btn small ghost" id="btn-prev" disabled>‹ 上一页</button>
+          <span class="pager-label" id="page-label">尚未浏览</span>
+          <button class="btn small ghost" id="btn-next" disabled>下一页 ›</button>
+        </div>
+        <label class="toggle" title="历史版本按选择时的版本号固定；当前版本行可勾选“跟随最新”">
+          <input type="checkbox" id="chk-history" checked>
+          <span>列出历史版本</span>
+        </label>
+      </div>
+
+      <div class="cursor-note" id="cursor-note" hidden></div>
+
+      <div class="table-wrap">
+        <table class="data-table browse-table">
+          <thead>
+            <tr>
+              <th class="check"></th>
+              <th>对象键</th>
+              <th class="num">大小</th>
+              <th>当前版本</th>
+              <th>内容指纹</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="browse-body">
+            <tr><td colspan="6" class="empty">输入前缀后点击「浏览」</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="selection-bar">
+        <div class="selection-info">
+          <strong id="sel-count">0</strong> 个版本已选
+          <span class="muted" id="sel-summary"></span>
+        </div>
+        <div class="selection-actions">
+          <button class="btn ghost small" id="btn-sel-clear" disabled>清空</button>
+          <label class="toggle" title="发现完成后自动导入列表中所有当前版本">
+            <input type="checkbox" id="chk-auto">
+            <span>自动导入当前版本</span>
+          </label>
+          <button class="btn primary" id="btn-start" disabled>发现并导入</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="demo-panel">
+      <div class="panel-head">
+        <div>
+          <h2><span class="step">2</span> 模拟存储侧变化</h2>
+          <p class="hint">在分页或下载进行时操作，观察采集端的发现、续传与另建任务行为。</p>
+        </div>
+      </div>
+
+      <div class="demo-grid">
+        <div class="demo-card">
+          <h3>覆盖对象</h3>
+          <p class="hint">写入同名键的新版本，内容变化即产生新指纹。</p>
+          <label class="field"><span>对象键</span>
+            <input id="mut-put-key" type="text" placeholder="incoming/batch-c/notes.txt"></label>
+          <label class="field"><span>新内容</span>
+            <input id="mut-put-content" type="text" placeholder="留空自动生成带时间戳的内容"></label>
+          <button class="btn small" id="btn-put">写入新版本</button>
+        </div>
+
+        <div class="demo-card">
+          <h3>删除 / 删除后重建</h3>
+          <p class="hint">删除会生成删除标记；重建则同名键出现新版本。</p>
+          <label class="field"><span>对象键</span>
+            <input id="mut-del-key" type="text" placeholder="incoming/batch-b/report.txt"></label>
+          <div class="row">
+            <button class="btn small" id="btn-del">生成删除标记</button>
+            <button class="btn small" id="btn-del-recreate">删除并重建</button>
+          </div>
+        </div>
+
+        <div class="demo-card">
+          <h3>模拟断流</h3>
+          <p class="hint">服务端在指定字节后关闭连接，下一次请求才能续传。</p>
+          <div class="row two">
+            <label class="field grow"><span>对象键（* 为任意）</span>
+              <input id="mut-fault-key" type="text" value="incoming/batch-a/payload.bin"></label>
+            <label class="field narrow"><span>断在字节</span>
+              <input id="mut-fault-bytes" type="number" value="200000" min="1"></label>
+            <label class="field narrow"><span>次数</span>
+              <input id="mut-fault-times" type="number" value="1" min="1" max="50"></label>
+          </div>
+          <div class="row">
+            <button class="btn small" id="btn-fault">下次下载断流</button>
+            <button class="btn small ghost" id="btn-fault-clear">清除断流</button>
+          </div>
+        </div>
+
+        <div class="demo-card">
+          <h3>让分页游标失效</h3>
+          <p class="hint">服务端换代游标纪元，正在翻页的扫描会收到 410 并重新扫描。</p>
+          <div class="row">
+            <button class="btn small" id="btn-invalidate">使游标失效</button>
+            <button class="btn small ghost" id="btn-reseed">重建演示数据</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="fault-list" id="fault-list"></div>
+    </section>
+  </div>
+
+  <div class="column right">
+    <section class="panel job-panel" id="job-panel">
+      <div class="panel-head">
+        <div>
+          <h2><span class="step">3</span> 采集任务</h2>
+          <p class="hint" id="job-subtitle">还没有任务。选择版本后点「发现并导入」。</p>
+        </div>
+        <div class="job-picker">
+          <select id="job-select"><option value="">最近的任务</option></select>
+        </div>
+      </div>
+
+      <div id="job-empty" class="job-empty">
+        <div class="empty-art">◌</div>
+        <p>左侧选择对象键与版本后开始第一个采集任务。</p>
+      </div>
+
+      <div id="job-content" hidden>
+        <div class="job-summary">
+          <div class="stat"><span class="stat-label">状态</span><span class="stat-value" id="job-status">—</span></div>
+          <div class="stat"><span class="stat-label">代次</span><span class="stat-value" id="job-gen">—</span></div>
+          <div class="stat"><span class="stat-label">页</span><span class="stat-value" id="job-pages">—</span></div>
+          <div class="stat"><span class="stat-label">键 / 版本</span><span class="stat-value" id="job-counts">—</span></div>
+          <div class="stat"><span class="stat-label">已完成</span><span class="stat-value" id="job-done">—</span></div>
+          <div class="stat"><span class="stat-label">已跳过</span><span class="stat-value" id="job-skipped">—</span></div>
+        </div>
+
+        <div class="job-actions">
+          <button class="btn small primary" id="btn-job-import">导入所选</button>
+          <button class="btn small" id="btn-job-resume">续传 / 继续</button>
+          <button class="btn small" id="btn-job-rescan">重新扫描</button>
+          <button class="btn small ghost" id="btn-job-cancel">取消</button>
+          <label class="toggle" title="重新扫描发现新版本后自动导入">
+            <input type="checkbox" id="chk-job-auto">
+            <span>自动导入</span>
+          </label>
+          <span class="spacer"></span>
+          <button class="btn small ghost" id="btn-manifest-json">清单 JSON</button>
+          <button class="btn small ghost" id="btn-manifest-csv">清单 CSV</button>
+        </div>
+
+        <div class="job-progress">
+          <div class="progress-track"><div class="progress-fill" id="job-progress-fill"></div></div>
+          <span class="progress-text" id="job-progress-text"></span>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="versions" role="tab">版本记录</button>
+          <button class="tab" data-tab="transfers" role="tab">传输</button>
+          <button class="tab" data-tab="events" role="tab">事件</button>
+          <button class="tab" data-tab="manifest" role="tab">清单</button>
+        </div>
+
+        <div class="tab-body" id="tab-versions">
+          <div class="table-wrap tall">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>对象键</th><th>版本</th><th class="num">大小</th>
+                  <th>发现</th><th>下载</th><th>入库</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="versions-body">
+                <tr><td colspan="7" class="empty">暂无记录</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-body" id="tab-transfers" hidden>
+          <div class="table-wrap tall">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>传输</th><th>对象键 / 版本</th><th class="num">进度</th>
+                  <th>尝试</th><th>状态</th><th>说明</th>
+                </tr>
+              </thead>
+              <tbody id="transfers-body">
+                <tr><td colspan="6" class="empty">暂无传输</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-body" id="tab-events" hidden>
+          <div class="event-log" id="event-log"></div>
+        </div>
+
+        <div class="tab-body" id="tab-manifest" hidden>
+          <div class="manifest-head">
+            <span class="muted" id="manifest-meta">清单在任务结束后生成，也可随时下载当前快照。</span>
+            <button class="btn small" id="btn-manifest-refresh">刷新预览</button>
+          </div>
+          <pre class="manifest-preview" id="manifest-preview">—</pre>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
